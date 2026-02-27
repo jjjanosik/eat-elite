@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Eat Elite",
+    "slug": "eat-elite",
+    "scheme": "eatelite",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.eatelite.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Eat Elite uses your camera to scan product barcodes.",
+        "NSUserNotificationsUsageDescription": "Eat Elite can send optional reminders related to your food goals."
+      }
+    },
+    "android": {
+      "package": "com.eatelite.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

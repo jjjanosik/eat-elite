@@ -1,0 +1,40 @@
+project_id = "eat-elite"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[functions.profile]
+verify_jwt = true
+
+[functions.weights]
+verify_jwt = true
+
+[functions.scan]
+verify_jwt = true
+
+[functions.history]
+verify_jwt = true
+
+[functions.history-item]
+verify_jwt = true
+
+[functions.history-delete]
+verify_jwt = true
+
+[functions.history-regenerate]
+verify_jwt = true
+
+[functions.bootstrap-user]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
