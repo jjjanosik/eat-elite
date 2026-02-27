@@ -97,3 +97,4 @@ Supabase function name -> Spec endpoint
 
 - Phase 1 intentionally uses a fake paywall and does not include RevenueCat.
 - Entitlement enforcement for paid access is deferred to Phase 2.
+# eat-elite
