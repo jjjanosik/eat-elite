@@ -25,14 +25,6 @@ export default function RootLayout() {
               headerBackTitle: '',
             }}
           />
-          <Stack.Screen
-            name="history/[id]"
-            options={{
-              title: 'History Details',
-              headerBackButtonDisplayMode: 'minimal',
-              headerBackTitle: '',
-            }}
-          />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         </Stack>
       </AppStateProvider>

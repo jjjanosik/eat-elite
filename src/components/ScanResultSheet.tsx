@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   Image,
   PanResponder,
   ScrollView,
@@ -9,10 +10,15 @@ import {
   Text,
   View,
 } from 'react-native';
+import { AsteriskBoldText } from '@/components/AsteriskBoldText';
+import { getScoreIndicatorColor } from '@/lib/score';
 import type { ScanResult } from '@/lib/types';
 
 const SHEET_VISIBLE_HEIGHT = 190;
 const SHEET_DISMISS_DRAG = 90;
+const SHEET_COLLAPSED_RAISE_RATIO = 0.1;
+const SHEET_COLLAPSE_FROM_EXPANDED_DRAG_PX = 10;
+const SHEET_DRAG_ACTIVATION_DY = 8;
 const NUTRIENT_DEFINITIONS = [
   { key: 'energy-kcal_100g', label: 'Calories', unit: 'kcal' },
   { key: 'fat_100g', label: 'Fat', unit: 'g' },
@@ -40,16 +46,41 @@ function toNumber(value: unknown): number | null {
 export function ScanResultSheet({
   result,
   onDismiss,
+  expandedTopOffset = 0,
+  bottomContentPadding = 24,
 }: {
   result: ScanResult;
   onDismiss: () => void;
+  expandedTopOffset?: number;
+  bottomContentPadding?: number;
 }) {
   const sheetTranslateY = useRef(new Animated.Value(1000)).current;
+  const sheetScrollRef = useRef<ScrollView | null>(null);
+  const sheetScrollOffsetRef = useRef(0);
   const sheetStartYRef = useRef(0);
+  const sheetLastLayoutHeightRef = useRef(0);
   const sheetCurrentYRef = useRef(1000);
+  const sheetExpandedYRef = useRef(Math.max(0, expandedTopOffset));
   const sheetCollapsedYRef = useRef(0);
   const sheetDismissYRef = useRef(0);
   const hasOpenedRef = useRef(false);
+  const scrollEnabledRef = useRef(false);
+  const [scrollEnabled, setScrollEnabled] = useState(false);
+
+  const setSheetScrollEnabled = useCallback((next: boolean) => {
+    if (scrollEnabledRef.current === next) return;
+    scrollEnabledRef.current = next;
+    setScrollEnabled(next);
+  }, []);
+
+  useEffect(() => {
+    const listenerId = sheetTranslateY.addListener(({ value }) => {
+      sheetCurrentYRef.current = value;
+    });
+    return () => {
+      sheetTranslateY.removeListener(listenerId);
+    };
+  }, [sheetTranslateY]);
 
   const nutritionRows = useMemo(() => {
     const nutriments = result.product.nutriments ?? {};
@@ -60,39 +91,51 @@ export function ScanResultSheet({
     }).filter((row): row is string => Boolean(row));
   }, [result.product.nutriments]);
 
+  const resetSheetContentToTop = useCallback(() => {
+    sheetScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
   const animateSheetTo = useCallback(
-    (value: number, velocity = 0) => {
-      Animated.spring(sheetTranslateY, {
+    (value: number) => {
+      Animated.timing(sheetTranslateY, {
         toValue: value,
-        velocity,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-        bounciness: 0,
-        speed: 18,
-      }).start(() => {
-        sheetCurrentYRef.current = value;
+      }).start(({ finished }) => {
+        if (!finished) return;
+        if (value > sheetExpandedYRef.current + 0.5) {
+          resetSheetContentToTop();
+        }
       });
     },
-    [sheetTranslateY],
+    [resetSheetContentToTop, sheetTranslateY],
   );
 
   const dismissSheet = useCallback(() => {
     const dismissY = sheetDismissYRef.current;
+    setSheetScrollEnabled(false);
     Animated.timing(sheetTranslateY, {
       toValue: dismissY,
-      duration: 170,
+      duration: 240,
+      easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
-      sheetCurrentYRef.current = dismissY;
       onDismiss();
     });
-  }, [onDismiss, sheetTranslateY]);
+  }, [onDismiss, setSheetScrollEnabled, sheetTranslateY]);
 
   const onSheetLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const height = event.nativeEvent.layout.height;
       if (height <= 0) return;
 
-      const collapsedY = Math.max(height - SHEET_VISIBLE_HEIGHT, 0);
+      const layoutHeightChanged = sheetLastLayoutHeightRef.current !== height;
+      sheetLastLayoutHeightRef.current = height;
+      const expandedY = Math.max(0, expandedTopOffset);
+      sheetExpandedYRef.current = expandedY;
+      const collapsedRaise = Math.floor(height * SHEET_COLLAPSED_RAISE_RATIO);
+      const collapsedY = Math.max(height - SHEET_VISIBLE_HEIGHT - collapsedRaise, expandedY);
       const dismissY = height + 80;
       sheetCollapsedYRef.current = collapsedY;
       sheetDismissYRef.current = dismissY;
@@ -103,42 +146,64 @@ export function ScanResultSheet({
         sheetTranslateY.setValue(dismissY);
         Animated.timing(sheetTranslateY, {
           toValue: collapsedY,
-          duration: 210,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }).start(() => {
-          sheetCurrentYRef.current = collapsedY;
+          setSheetScrollEnabled(false);
         });
         return;
       }
 
-      const clamped = clamp(sheetCurrentYRef.current, 0, dismissY);
-      sheetCurrentYRef.current = clamped;
+      if (!layoutHeightChanged) {
+        return;
+      }
+
+      const clamped = clamp(sheetCurrentYRef.current, expandedY, dismissY);
       sheetTranslateY.setValue(clamped);
     },
-    [sheetTranslateY],
+    [expandedTopOffset, setSheetScrollEnabled, sheetTranslateY],
   );
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 5,
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+          if (Math.abs(gestureState.dy) <= SHEET_DRAG_ACTIVATION_DY) return false;
+          if (!scrollEnabledRef.current) return true;
+
+          const expandedY = sheetExpandedYRef.current;
+          const isExpanded = sheetCurrentYRef.current <= expandedY + 8;
+          if (!isExpanded) return true;
+
+          const isPullingDown = gestureState.dy > 0;
+          const isScrollAtTop = sheetScrollOffsetRef.current <= 0;
+          return isPullingDown && isScrollAtTop;
+        },
         onPanResponderGrant: () => {
+          setSheetScrollEnabled(false);
+          // Seed from current value before stopAnimation callback to avoid first-frame jumps.
+          sheetStartYRef.current = sheetCurrentYRef.current;
           sheetTranslateY.stopAnimation((value) => {
             sheetStartYRef.current = value;
-            sheetCurrentYRef.current = value;
           });
         },
         onPanResponderMove: (_, gestureState) => {
+          const expandedY = sheetExpandedYRef.current;
           const dismissY = sheetDismissYRef.current;
-          const nextY = clamp(sheetStartYRef.current + gestureState.dy, 0, dismissY);
-          sheetCurrentYRef.current = nextY;
+          const nextY = clamp(sheetStartYRef.current + gestureState.dy, expandedY, dismissY);
           sheetTranslateY.setValue(nextY);
         },
         onPanResponderRelease: (_, gestureState) => {
+          const expandedY = sheetExpandedYRef.current;
           const dismissY = sheetDismissYRef.current;
           const collapsedY = sheetCollapsedYRef.current;
-          const finalY = clamp(sheetStartYRef.current + gestureState.dy, 0, dismissY);
+          const finalY = clamp(sheetStartYRef.current + gestureState.dy, expandedY, dismissY);
+          const startedExpanded = sheetStartYRef.current <= expandedY + 8;
+          const draggedDownFromExpanded = finalY - expandedY;
+          const shouldCollapseFromExpanded = startedExpanded && draggedDownFromExpanded >= SHEET_COLLAPSE_FROM_EXPANDED_DRAG_PX;
           const shouldDismiss =
             finalY > collapsedY + SHEET_DISMISS_DRAG || (gestureState.vy > 1.1 && finalY > collapsedY);
 
@@ -147,28 +212,49 @@ export function ScanResultSheet({
             return;
           }
 
-          const shouldExpand = finalY < collapsedY * 0.55 || gestureState.vy < -0.8;
+          if (shouldCollapseFromExpanded) {
+            setSheetScrollEnabled(false);
+            animateSheetTo(collapsedY);
+            return;
+          }
+
+          const expandThreshold = expandedY + (collapsedY - expandedY) * 0.55;
+          const shouldExpand = finalY < expandThreshold || gestureState.vy < -0.8;
           if (shouldExpand) {
-            animateSheetTo(0, gestureState.vy);
+            setSheetScrollEnabled(true);
+            animateSheetTo(expandedY);
           } else {
-            animateSheetTo(collapsedY, gestureState.vy);
+            setSheetScrollEnabled(false);
+            animateSheetTo(collapsedY);
           }
         },
         onPanResponderTerminate: () => {
+          setSheetScrollEnabled(false);
           animateSheetTo(sheetCollapsedYRef.current);
         },
       }),
-    [animateSheetTo, dismissSheet, sheetTranslateY],
+    [animateSheetTo, dismissSheet, setSheetScrollEnabled, sheetTranslateY],
   );
+
+  const onSheetScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    sheetScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+  }, []);
 
   return (
     <View style={styles.resultOverlay} pointerEvents="box-none">
       <Animated.View style={[styles.resultSheet, { transform: [{ translateY: sheetTranslateY }] }]} onLayout={onSheetLayout}>
-        <View style={styles.resultCard}>
-          <View style={styles.dragHandleWrap} {...panResponder.panHandlers}>
+        <View style={styles.resultCard} {...panResponder.panHandlers}>
+          <View style={styles.dragHandleWrap}>
             <View style={styles.dragHandle} />
           </View>
-          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetScrollContent}>
+          <ScrollView
+            ref={sheetScrollRef}
+            style={styles.sheetScroll}
+            contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: bottomContentPadding }]}
+            scrollEnabled={scrollEnabled}
+            onScroll={onSheetScroll}
+            scrollEventThrottle={16}
+          >
             <View style={styles.productHeader}>
               {result.product.image_url ? (
                 <Image source={{ uri: result.product.image_url }} style={styles.productImage} />
@@ -182,7 +268,10 @@ export function ScanResultSheet({
                 <Text style={styles.metaText} numberOfLines={2}>
                   {result.product.brands ?? 'Unknown brand'}
                 </Text>
-                <Text style={styles.scoreText}>Score: {result.score}/100</Text>
+                <View style={styles.scoreRow}>
+                  <View style={[styles.scoreDot, { backgroundColor: getScoreIndicatorColor(result.score) }]} />
+                  <Text style={styles.scoreText}>{result.score}/100</Text>
+                </View>
               </View>
             </View>
             <View style={styles.infoSection}>
@@ -218,7 +307,7 @@ export function ScanResultSheet({
                 <Text style={styles.infoText}>No nutrition data available.</Text>
               )}
             </View>
-            <Text style={styles.aiText}>{result.ai_response}</Text>
+            <AsteriskBoldText text={result.ai_response} style={styles.aiText} />
             <Text style={styles.cacheMetaText}>
               {result.ai_cached ? 'AI explanation reused from cache' : 'New AI explanation generated'}
             </Text>
@@ -232,9 +321,6 @@ export function ScanResultSheet({
 const styles = StyleSheet.create({
   resultOverlay: {
     ...StyleSheet.absoluteFillObject,
-    top: -16,
-    left: -16,
-    right: -16,
     justifyContent: 'flex-end',
   },
   resultSheet: {
@@ -247,8 +333,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderWidth: 1,
-    borderColor: '#d8dee4',
     paddingHorizontal: 14,
     paddingTop: 6,
   },
@@ -266,7 +350,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheetScrollContent: {
-    paddingBottom: 24,
+    flexGrow: 1,
   },
   productHeader: {
     flexDirection: 'row',
@@ -297,11 +381,21 @@ const styles = StyleSheet.create({
     color: '#4f5d6b',
     marginTop: 4,
   },
-  scoreText: {
+  scoreRow: {
     marginTop: 6,
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#18B84A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  scoreText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2328',
   },
   aiText: {
     marginTop: 12,

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
+import { AsteriskBoldText } from '@/components/AsteriskBoldText';
 import { fetchHistoryItem } from '@/lib/api';
+import { getScoreIndicatorColor } from '@/lib/score';
+import { formatRelativeTime } from '@/lib/time';
 import type { HistoryDetailItem } from '@/lib/types';
+
+const HISTORY_DETAIL_BOTTOM_PADDING = 72;
 
 type NutrientDefinition = {
   key: string;
@@ -22,12 +28,6 @@ const nutrientDefinitions: NutrientDefinition[] = [
   { key: 'salt_100g', label: 'Salt', unit: 'g' },
 ];
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -40,6 +40,7 @@ function toNumber(value: unknown): number | null {
 export default function HistoryDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const historyId = useMemo(() => (typeof params.id === 'string' ? params.id : ''), [params.id]);
+  const tabBarHeight = useBottomTabBarHeight();
   const [item, setItem] = useState<HistoryDetailItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -112,7 +113,7 @@ export default function HistoryDetailScreen() {
       ) : errorText ? (
         <Text style={styles.errorText}>{errorText}</Text>
       ) : item ? (
-        <View style={styles.content}>
+        <View style={[styles.content, { paddingBottom: tabBarHeight + HISTORY_DETAIL_BOTTOM_PADDING }]}>
           <View style={styles.heroRow}>
             {item.product?.image_url ? (
               <Image source={{ uri: item.product.image_url }} style={styles.image} />
@@ -126,9 +127,17 @@ export default function HistoryDetailScreen() {
               <Text style={styles.meta} numberOfLines={2}>
                 {item.product?.brands ?? 'Unknown brand'}
               </Text>
-              <Text style={styles.score}>Score: {item.score}/100</Text>
-              <Text style={styles.meta}>{formatDate(item.created_at)}</Text>
+              <View style={styles.scoreRow}>
+                <View style={[styles.scoreDot, { backgroundColor: getScoreIndicatorColor(item.score) }]} />
+                <Text style={styles.score}>{item.score}/100</Text>
+              </View>
+              <Text style={styles.meta}>{formatRelativeTime(item.created_at)}</Text>
             </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Explanation</Text>
+            <AsteriskBoldText text={item.ai_response ?? 'No Grok explanation saved for this scan yet.'} style={styles.aiText} />
           </View>
 
           <View style={styles.section}>
@@ -172,11 +181,6 @@ export default function HistoryDetailScreen() {
               <Text style={styles.detailText}>No nutrition data available.</Text>
             )}
           </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Grok Explanation</Text>
-            <Text style={styles.aiText}>{item.ai_response ?? 'No Grok explanation saved for this scan yet.'}</Text>
-          </View>
         </View>
       ) : (
         <Text style={styles.errorText}>History item not found.</Text>
@@ -192,17 +196,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    gap: 14,
+    gap: 10,
   },
   heroRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d8dee4',
-    borderRadius: 14,
-    padding: 12,
   },
   heroMeta: {
     flex: 1,
@@ -228,24 +227,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: '#4f5d6b',
   },
-  score: {
+  scoreRow: {
     marginTop: 6,
-    color: '#18B84A',
-    fontSize: 24,
-    fontWeight: '800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  score: {
+    color: '#1f2328',
+    fontSize: 18,
+    fontWeight: '700',
   },
   section: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d8dee4',
-    borderRadius: 14,
-    padding: 12,
+    paddingTop: 4,
   },
   sectionTitle: {
     color: '#1f2328',
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 8,
+    marginTop: 6,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#d8dee4',
   },
   detailText: {
     color: '#1f2328',

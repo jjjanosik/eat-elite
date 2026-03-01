@@ -12,53 +12,43 @@ import {
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { deleteHistoryItem, fetchHistory } from '@/lib/api';
+import { getScoreIndicatorColor } from '@/lib/score';
+import { formatRelativeTime } from '@/lib/time';
 import type { HistoryListItem } from '@/lib/types';
 
 const DELETE_ACTION_WIDTH = 110;
+const HISTORY_BOTTOM_PADDING = 72;
+const DELETE_ACTION_RED = '#E53945';
+const DELETE_FOLLOW_EDGE_GAP = 0;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function formatRelativeTime(value: string): string {
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return 'Unknown time';
+function RowChevron() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" style={styles.chevron}>
+      <Path stroke="#8c959f" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+    </Svg>
+  );
+}
 
-  const seconds = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
-
-  if (seconds < 60) {
-    return `${seconds} ${seconds === 1 ? 'second' : 'seconds'} ago`;
-  }
-
-  const minutes = Math.max(1, Math.floor(seconds / 60));
-  if (minutes < 60) {
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
-  }
-
-  const hours = Math.max(1, Math.floor(minutes / 60));
-  if (hours < 24) {
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  }
-
-  const days = Math.max(1, Math.floor(hours / 24));
-  if (days < 7) {
-    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  }
-
-  const weeks = Math.max(1, Math.floor(days / 7));
-  if (weeks < 4) {
-    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
-  }
-
-  const months = Math.max(1, Math.floor(days / 30));
-  if (months < 12) {
-    return `${months} ${months === 1 ? 'month' : 'months'} ago`;
-  }
-
-  const years = Math.max(1, Math.floor(days / 365));
-  return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+function TrashIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.deleteIcon}>
+      <Path
+        stroke="#fff"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+      />
+    </Svg>
+  );
 }
 
 function HistorySwipeRow({
@@ -93,6 +83,19 @@ function HistorySwipeRow({
 
   const revealDistance = useMemo(() => Math.max(DELETE_ACTION_WIDTH + 12, Math.floor(rowWidth * 0.3)), [rowWidth]);
   const maxSwipeDistance = useMemo(() => Math.max(revealDistance + 100, Math.floor(rowWidth * 0.9)), [revealDistance, rowWidth]);
+  const deleteActionTranslateX = useMemo(
+    () =>
+      translateX.interpolate({
+        inputRange: [-maxSwipeDistance, -deleteTriggerDistance, 0],
+        outputRange: [
+          -(maxSwipeDistance - DELETE_ACTION_WIDTH - DELETE_FOLLOW_EDGE_GAP),
+          -(deleteTriggerDistance - DELETE_ACTION_WIDTH - DELETE_FOLLOW_EDGE_GAP),
+          0,
+        ],
+        extrapolate: 'clamp',
+      }),
+    [deleteTriggerDistance, maxSwipeDistance, translateX],
+  );
 
   const animateTo = useCallback(
     (toValue: number) => {
@@ -224,9 +227,12 @@ function HistorySwipeRow({
   return (
     <View style={[styles.swipeContainer, index === 0 ? styles.firstRow : undefined]} onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}>
       <View style={styles.deleteBackground}>
-        <Pressable onPress={() => void runDelete()} disabled={deleting} style={[styles.deleteButton, deleting ? styles.deleteButtonDisabled : undefined]}>
-          <Text style={styles.deleteText}>{deleting ? 'Deleting...' : 'Delete'}</Text>
-        </Pressable>
+        <Animated.View style={{ transform: [{ translateX: deleteActionTranslateX }] }}>
+          <Pressable onPress={() => void runDelete()} disabled={deleting} style={[styles.deleteButton, deleting ? styles.deleteButtonDisabled : undefined]}>
+            <TrashIcon />
+            <Text style={styles.deleteText}>{deleting ? 'Deleting...' : 'Delete'}</Text>
+          </Pressable>
+        </Animated.View>
       </View>
       <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
         <Pressable onPress={onPress} style={styles.row} disabled={deleting}>
@@ -244,9 +250,12 @@ function HistorySwipeRow({
                 {item.product?.brands ?? 'Unknown brand'}
               </Text>
               <Text style={styles.meta}>{formatRelativeTime(item.created_at)}</Text>
-              <Text style={styles.score}>Score: {item.score}/100</Text>
+              <View style={styles.scoreRow}>
+                <View style={[styles.scoreDot, { backgroundColor: getScoreIndicatorColor(item.score) }]} />
+                <Text style={styles.score}>{item.score}/100</Text>
+              </View>
             </View>
-            <Text style={styles.chevron}>{'>'}</Text>
+            <RowChevron />
           </View>
         </Pressable>
       </Animated.View>
@@ -259,6 +268,7 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   const [activeSwipeRowId, setActiveSwipeRowId] = useState<string | null>(null);
+  const tabBarHeight = useBottomTabBarHeight();
   const deletingRef = useRef(new Set<string>());
 
   const load = useCallback(async () => {
@@ -317,7 +327,8 @@ export default function HistoryScreen() {
         </View>
       ) : (
         <FlatList
-          contentContainerStyle={styles.listContent}
+          style={styles.list}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + HISTORY_BOTTOM_PADDING }]}
           data={items}
           keyExtractor={(item) => item.id}
           onRefresh={load}
@@ -330,7 +341,7 @@ export default function HistoryScreen() {
               index={index}
               deleting={Boolean(deletingIds[item.id])}
               onDelete={() => handleDelete(item.id)}
-              onPress={() => router.push({ pathname: '/history/[id]', params: { id: item.id } })}
+              onPress={() => router.push({ pathname: '/(tabs)/history/[id]', params: { id: item.id } })}
               onSwipeStart={handleSwipeStart}
               onSwipeEnd={handleSwipeEnd}
             />
@@ -345,7 +356,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f6f8fa',
+    backgroundColor: '#ffffff',
   },
   loaderWrap: {
     flex: 1,
@@ -353,7 +364,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   listContent: {
+    flexGrow: 1,
     paddingBottom: 24,
+  },
+  list: {
+    flex: 1,
   },
   swipeContainer: {
     backgroundColor: '#fff',
@@ -374,22 +389,25 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'flex-end',
     justifyContent: 'center',
-    backgroundColor: '#fff5f5',
+    backgroundColor: DELETE_ACTION_RED,
   },
   deleteButton: {
     width: DELETE_ACTION_WIDTH,
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d1242f',
+    backgroundColor: DELETE_ACTION_RED,
   },
   deleteButtonDisabled: {
-    backgroundColor: '#f17f86',
+    backgroundColor: DELETE_ACTION_RED,
   },
   deleteText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  deleteIcon: {
+    marginBottom: 4,
   },
   headerRow: {
     flexDirection: 'row',
@@ -420,16 +438,23 @@ const styles = StyleSheet.create({
     color: '#4f5d6b',
     marginTop: 4,
   },
-  score: {
+  scoreRow: {
     marginTop: 6,
-    color: '#18B84A',
-    fontWeight: '800',
-    fontSize: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  score: {
+    color: '#1f2328',
+    fontWeight: '700',
+    fontSize: 16,
   },
   chevron: {
-    color: '#8c959f',
-    fontSize: 20,
-    fontWeight: '700',
     marginLeft: 4,
   },
   empty: {
