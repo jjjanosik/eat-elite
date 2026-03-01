@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { Screen } from '@/components/Screen';
 import { AsteriskBoldText } from '@/components/AsteriskBoldText';
 import { fetchHistoryItem } from '@/lib/api';
@@ -35,6 +36,20 @@ function toNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function ClockIcon() {
+  return (
+    <Svg width={13} height={13} viewBox="2 2 20 20" fill="none">
+      <Path
+        stroke="#6e7781"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+      />
+    </Svg>
+  );
 }
 
 export default function HistoryDetailScreen() {
@@ -98,14 +113,6 @@ export default function HistoryDetailScreen() {
 
   return (
     <Screen topInset={false}>
-      <Stack.Screen
-        options={{
-          title: 'History Details',
-          headerBackButtonDisplayMode: 'minimal',
-          headerBackTitle: '',
-        }}
-      />
-
       {loading ? (
         <View style={styles.loaderWrap}>
           <ActivityIndicator size="large" color="#1f883d" />
@@ -131,7 +138,10 @@ export default function HistoryDetailScreen() {
                 <View style={[styles.scoreDot, { backgroundColor: getScoreIndicatorColor(item.score) }]} />
                 <Text style={styles.score}>{item.score}/100</Text>
               </View>
-              <Text style={styles.meta}>{formatRelativeTime(item.created_at)}</Text>
+              <View style={styles.timeRow}>
+                <ClockIcon />
+                <Text style={styles.timeText}>{formatRelativeTime(item.created_at)}</Text>
+              </View>
             </View>
           </View>
 
@@ -225,7 +235,16 @@ const styles = StyleSheet.create({
   },
   meta: {
     marginTop: 4,
-    color: '#4f5d6b',
+    color: '#6e7781',
+  },
+  timeRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeText: {
+    color: '#6e7781',
   },
   scoreRow: {
     marginTop: 6,
@@ -234,8 +253,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   scoreDot: {
-    width: 8,
-    height: 8,
+    width: 13,
+    height: 13,
     borderRadius: 999,
   },
   score: {

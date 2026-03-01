@@ -1,4 +1,5 @@
-import { Redirect, Tabs, router } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { Tabs, router } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
@@ -71,22 +72,50 @@ function HistoryListIcon({ color, size }: { color: string; size: number }) {
   );
 }
 
+function BackChevronIcon() {
+  return (
+    <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backChevronHitArea}>
+      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+        <Path stroke="#1f2328" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" d="m15.75 19.5-7.5-7.5 7.5-7.5" />
+      </Svg>
+    </Pressable>
+  );
+}
+
 export default function TabsLayout() {
   const { session, onboardingComplete, paywallUnlocked, loading } = useAppState();
   const insets = useSafeAreaInsets();
   const tabBarHeight = TAB_BAR_BASE_HEIGHT + insets.bottom;
+  const redirectingRef = useRef(false);
+  const [tabsMountedOnce, setTabsMountedOnce] = useState(false);
 
-  if (loading) {
+  const nextRoute = getNextRoute({ session, onboardingComplete, paywallUnlocked });
+  const shouldRedirectAwayFromTabs = !loading && nextRoute !== '/(tabs)/scan';
+
+  useEffect(() => {
+    if (!shouldRedirectAwayFromTabs) {
+      redirectingRef.current = false;
+      return;
+    }
+
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
+    router.replace(nextRoute);
+  }, [nextRoute, shouldRedirectAwayFromTabs]);
+
+  useEffect(() => {
+    if (tabsMountedOnce) return;
+    if (loading) return;
+    if (shouldRedirectAwayFromTabs) return;
+    setTabsMountedOnce(true);
+  }, [loading, shouldRedirectAwayFromTabs, tabsMountedOnce]);
+
+  if (!tabsMountedOnce) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff' }}>
         <ActivityIndicator color="#1f883d" />
       </View>
     );
-  }
-
-  const nextRoute = getNextRoute({ session, onboardingComplete, paywallUnlocked });
-  if (nextRoute !== '/(tabs)/scan') {
-    return <Redirect href={nextRoute} />;
   }
 
   return (
@@ -139,7 +168,13 @@ export default function TabsLayout() {
           const isHistoryDetail = focusedRouteName === '[id]';
           return {
             title: 'History',
-            headerShown: !isHistoryDetail,
+            headerTitle: isHistoryDetail ? '' : 'History',
+            headerShown: true,
+            headerShadowVisible: false,
+            headerStyle: { backgroundColor: '#ffffff' },
+            headerLeft: isHistoryDetail ? () => <BackChevronIcon /> : undefined,
+            headerBackVisible: !isHistoryDetail,
+            headerRight: isHistoryDetail ? () => null : undefined,
             tabBarIcon: ({ color, size }) => <HistoryListIcon color={color} size={size} />,
           };
         }}
@@ -159,6 +194,11 @@ const styles = StyleSheet.create({
   settingsButton: {
     padding: 4,
     marginRight: 8,
+  },
+  backChevronHitArea: {
+    paddingVertical: 6,
+    paddingRight: 28,
+    paddingLeft: 10,
   },
   tabBarBlur: {
     borderTopWidth: 1,

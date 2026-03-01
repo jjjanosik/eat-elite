@@ -244,6 +244,7 @@ export default function GoalsScreen() {
     }),
     [saveVisibility],
   );
+  const saveBarBottom = tabBarHeight + 84;
 
   const saveLabel = hasChanges ? 'Save' : 'Saved! 🤗';
 
@@ -262,7 +263,6 @@ export default function GoalsScreen() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>Goals & Weights</Text>
           <Text style={styles.subtitle}>Customize what the score emphasizes for your profile.</Text>
 
           <Text style={styles.sectionTitle}>Diet Goals</Text>
@@ -321,7 +321,7 @@ export default function GoalsScreen() {
 
         <Animated.View
           pointerEvents={showStickySave ? 'auto' : 'none'}
-          style={[styles.saveBarWrap, { bottom: 6 }, saveBarStyle]}
+          style={[styles.saveBarWrap, { bottom: saveBarBottom }, saveBarStyle]}
         >
           <PrimaryButton label={saveLabel} onPress={save} loading={saving} style={styles.saveButton} />
         </Animated.View>
@@ -382,14 +382,14 @@ const styles = StyleSheet.create({
     color: '#1f2328',
   },
   optionList: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   optionRow: {
-    minHeight: 42,
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
-    marginBottom: 6,
+    paddingVertical: 2,
+    marginBottom: 2,
   },
   checkbox: {
     width: 22,
@@ -418,13 +418,13 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   weightSection: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   weightField: {
-    minHeight: 44,
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 4,
   },
   weightFieldValue: {
     color: '#18B84A',

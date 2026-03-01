@@ -32,7 +32,21 @@ function clamp(value: number, min: number, max: number): number {
 function RowChevron() {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" style={styles.chevron}>
-      <Path stroke="#8c959f" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+      <Path stroke="#6e7781" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+    </Svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <Svg width={13} height={13} viewBox="2 2 20 20" fill="none">
+      <Path
+        stroke="#6e7781"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+      />
     </Svg>
   );
 }
@@ -54,7 +68,6 @@ function TrashIcon() {
 function HistorySwipeRow({
   id,
   item,
-  index,
   deleting,
   onPress,
   onDelete,
@@ -63,7 +76,6 @@ function HistorySwipeRow({
 }: {
   id: string;
   item: HistoryListItem;
-  index: number;
   deleting: boolean;
   onPress: () => void;
   onDelete: () => Promise<boolean>;
@@ -225,7 +237,7 @@ function HistorySwipeRow({
   );
 
   return (
-    <View style={[styles.swipeContainer, index === 0 ? styles.firstRow : undefined]} onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}>
+    <View style={styles.swipeContainer} onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}>
       <View style={styles.deleteBackground}>
         <Animated.View style={{ transform: [{ translateX: deleteActionTranslateX }] }}>
           <Pressable onPress={() => void runDelete()} disabled={deleting} style={[styles.deleteButton, deleting ? styles.deleteButtonDisabled : undefined]}>
@@ -249,10 +261,13 @@ function HistorySwipeRow({
               <Text style={styles.meta} numberOfLines={1}>
                 {item.product?.brands ?? 'Unknown brand'}
               </Text>
-              <Text style={styles.meta}>{formatRelativeTime(item.created_at)}</Text>
               <View style={styles.scoreRow}>
                 <View style={[styles.scoreDot, { backgroundColor: getScoreIndicatorColor(item.score) }]} />
                 <Text style={styles.score}>{item.score}/100</Text>
+              </View>
+              <View style={styles.timeRow}>
+                <ClockIcon />
+                <Text style={styles.timeText}>{formatRelativeTime(item.created_at)}</Text>
               </View>
             </View>
             <RowChevron />
@@ -334,11 +349,10 @@ export default function HistoryScreen() {
           onRefresh={load}
           refreshing={loading}
           scrollEnabled={activeSwipeRowId === null}
-          renderItem={({ item, index }) => (
+          renderItem={({ item }) => (
             <HistorySwipeRow
               id={item.id}
               item={item}
-              index={index}
               deleting={Boolean(deletingIds[item.id])}
               onDelete={() => handleDelete(item.id)}
               onPress={() => router.push({ pathname: '/(tabs)/history/[id]', params: { id: item.id } })}
@@ -380,10 +394,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 12,
-  },
-  firstRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#d8dee4',
   },
   deleteBackground: {
     ...StyleSheet.absoluteFillObject,
@@ -435,8 +445,17 @@ const styles = StyleSheet.create({
     color: '#1f2328',
   },
   meta: {
-    color: '#4f5d6b',
+    color: '#6e7781',
     marginTop: 4,
+  },
+  timeRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeText: {
+    color: '#6e7781',
   },
   scoreRow: {
     marginTop: 6,
@@ -445,8 +464,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   scoreDot: {
-    width: 8,
-    height: 8,
+    width: 13,
+    height: 13,
     borderRadius: 999,
   },
   score: {

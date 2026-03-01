@@ -17,14 +17,7 @@ export default function RootLayout() {
             options={{ title: 'Onboarding', headerShown: false, animation: 'slide_from_right', animationTypeForReplace: 'pop' }}
           />
           <Stack.Screen name="paywall" options={{ title: 'Choose Plan', headerShown: false }} />
-          <Stack.Screen
-            name="settings"
-            options={{
-              title: 'Settings',
-              headerBackButtonDisplayMode: 'minimal',
-              headerBackTitle: '',
-            }}
-          />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         </Stack>
       </AppStateProvider>

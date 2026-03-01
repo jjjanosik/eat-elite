@@ -1,7 +1,7 @@
-import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { Screen } from '@/components/Screen';
-import { PrimaryButton } from '@/components/PrimaryButton';
 import { useAppState } from '@/context/AppStateContext';
 import { deleteAccount } from '@/lib/api';
 
@@ -32,7 +32,23 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Screen topInset={false}>
+    <Screen>
+      <View style={styles.headerRow}>
+        <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backChevronHitArea}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path
+              stroke="#1f2328"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m15.75 19.5-7.5-7.5 7.5-7.5"
+            />
+          </Svg>
+        </Pressable>
+        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <Text style={styles.bodyText}>{user.email}</Text>
@@ -67,6 +83,26 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  backChevronHitArea: {
+    paddingVertical: 6,
+    paddingRight: 28,
+    paddingLeft: 10,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2328',
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 58,
+  },
   section: {
     backgroundColor: '#fff',
     borderWidth: 1,

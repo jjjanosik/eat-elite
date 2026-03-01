@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateInstallId } from '@/lib/install';
 import { clearLocalCache, unlockPaywall } from '@/lib/paywall';
@@ -47,6 +48,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [onboardingComplete, setOnboardingCompleteState] = useState(false);
   const [onboardingAnswers, setOnboardingAnswersState] = useState<OnboardingAnswers>(getDefaultOnboardingAnswers);
   const [loading, setLoading] = useState(true);
+  const hydratedRef = useRef(false);
 
   const user = session?.user ?? null;
 
@@ -79,8 +81,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
         setSession(data.session ?? null);
         setInstallId(nextInstallId);
-      } finally {
-        if (mounted) setLoading(false);
+      } catch (error) {
+        console.error('Failed to bootstrap app state', error);
+        if (!mounted) return;
+        setSession(null);
+        setInstallId(null);
+        setLoading(false);
       }
     };
 
@@ -89,9 +95,29 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession ?? null);
     });
+    const appStateSubscription = AppState.addEventListener('change', (status) => {
+      if (status === 'active') {
+        supabase.auth.startAutoRefresh();
+        void supabase.auth
+          .getSession()
+          .then(({ data }) => {
+            if (!mounted) return;
+            setSession(data.session ?? null);
+          })
+          .catch((error) => {
+            console.error('Failed to refresh auth session on app foreground', error);
+          });
+        return;
+      }
+
+      supabase.auth.stopAutoRefresh();
+    });
+    supabase.auth.startAutoRefresh();
 
     return () => {
       mounted = false;
+      appStateSubscription.remove();
+      supabase.auth.stopAutoRefresh();
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -100,7 +126,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     if (!installId) return;
 
     let mounted = true;
-    setLoading(true);
+    if (!hydratedRef.current) {
+      setLoading(true);
+    }
 
     refreshUserData()
       .catch((error) => {
@@ -108,6 +136,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       })
       .finally(() => {
         if (mounted) setLoading(false);
+        hydratedRef.current = true;
       });
 
     return () => {

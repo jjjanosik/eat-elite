@@ -388,8 +388,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   scoreDot: {
-    width: 8,
-    height: 8,
+    width: 13,
+    height: 13,
     borderRadius: 999,
   },
   scoreText: {
