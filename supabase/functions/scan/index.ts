@@ -1,10 +1,10 @@
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
 import { getAdminClient, requireUser } from '../_shared/auth.ts';
-import { fetchOpenFoodFactsProduct } from '../_shared/off.ts';
+import { extractServingInfoFromOffPayload, fetchOpenFoodFactsProduct } from '../_shared/off.ts';
 import { computeScore } from '../_shared/scoring.ts';
-import { generateGrokExplanation } from '../_shared/grok.ts';
+import { parseGrokExplanation } from '../_shared/grok.ts';
 import { enforceRateLimit, getBucketStart } from '../_shared/rate-limit.ts';
-import { parseJsonObject } from '../_shared/validation.ts';
+import { isRecord, parseJsonObject } from '../_shared/validation.ts';
 
 const PRODUCT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -23,28 +23,6 @@ function logFailure(requestId: string, checkpoint: string, error: unknown, detai
     ...details,
     error,
   });
-}
-
-function buildPrompt(input: {
-  productName: string;
-  score: number;
-  dietType: string;
-  goals: string[];
-  outcomes: string[];
-  additivesCount: number;
-  nutriments: Record<string, unknown>;
-}) {
-  return [
-    `Product: ${input.productName}`,
-    `Score: ${input.score}/100`,
-    `Diet type: ${input.dietType || 'unknown'}`,
-    `Goals: ${input.goals.join(', ') || 'none'}`,
-    `Outcomes: ${input.outcomes.join(', ') || 'none'}`,
-    `Additives count: ${input.additivesCount}`,
-    `Nutriments: ${JSON.stringify(input.nutriments)}`,
-    'Explain main score drivers and suggest 2 realistic improvements for a similar purchase.',
-    'Keep it concise and non-medical.',
-  ].join('\n');
 }
 
 function normalizeBarcode(raw: string): string {
@@ -191,6 +169,8 @@ Deno.serve(async (req) => {
     logCheckpoint(requestId, 'product_upsert_ok');
   }
 
+  const servingInfo = extractServingInfoFromOffPayload(isRecord(product?.off_payload) ? product.off_payload : {});
+
   logCheckpoint(requestId, 'profile_weights_lookup_start');
   const [{ data: profile, error: profileError }, { data: weights, error: weightsError }] = await Promise.all([
     supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle(),
@@ -279,6 +259,10 @@ Deno.serve(async (req) => {
     product_image_url: product?.image_url ?? null,
     ingredients_text: product?.ingredients_text ?? null,
     nutriments: product?.nutriments ?? {},
+    serving_size: servingInfo.serving_size,
+    serving_quantity: servingInfo.serving_quantity,
+    package_quantity: servingInfo.package_quantity,
+    nutrition_data_per: servingInfo.nutrition_data_per,
     additives_tags: product?.additives_tags ?? [],
     additives_count: scoring.additivesCount,
     nutrition_score: scoring.nutritionScore,
@@ -304,24 +288,16 @@ Deno.serve(async (req) => {
     .limit(1)
     .maybeSingle();
 
-  const prompt = buildPrompt({
-    productName: product?.name ?? barcode,
-    score: scoring.score,
-    dietType: profile.diet_type,
-    goals: Array.isArray(profile.diet_goals) ? (profile.diet_goals as string[]) : [],
-    outcomes: Array.isArray(profile.outcomes) ? (profile.outcomes as string[]) : [],
-    additivesCount: scoring.additivesCount,
-    nutriments: (product?.nutriments ?? {}) as Record<string, unknown>,
-  });
-
-  const aiStart = Date.now();
-  const aiCached = Boolean(lastHistoryWithSameBarcode?.ai_response);
-  logCheckpoint(requestId, 'ai_generation_start', { aiCached });
-  const aiResponse = aiCached
-    ? (lastHistoryWithSameBarcode?.ai_response as string)
-    : await generateGrokExplanation(prompt);
-  const aiLatencyMs = Date.now() - aiStart;
-  logCheckpoint(requestId, 'ai_generation_ok', { aiCached, aiLatencyMs });
+  const cachedAiResponseRaw =
+    typeof lastHistoryWithSameBarcode?.ai_response === 'string'
+      ? lastHistoryWithSameBarcode.ai_response
+      : null;
+  const parsedCachedAiResponse = cachedAiResponseRaw ? parseGrokExplanation(cachedAiResponseRaw) : null;
+  const aiResponse = parsedCachedAiResponse ? JSON.stringify(parsedCachedAiResponse) : null;
+  const aiCached = aiResponse !== null;
+  const aiPending = !aiCached;
+  const aiError: string | null = null;
+  logCheckpoint(requestId, 'ai_lookup_ok', { aiCached, aiPending });
 
   logCheckpoint(requestId, 'history_insert_start');
   const { data: history, error: historyError } = await supabase
@@ -351,7 +327,7 @@ Deno.serve(async (req) => {
     barcode,
     offCacheHit: !offHit,
     offLatencyMs: Date.now() - offStart,
-    aiLatencyMs,
+    aiPending,
     totalLatencyMs: Date.now() - requestStart,
   });
 
@@ -363,12 +339,18 @@ Deno.serve(async (req) => {
       brands: product?.brands,
       image_url: product?.image_url,
       ingredients_text: product?.ingredients_text,
+      serving_size: servingInfo.serving_size,
+      serving_quantity: servingInfo.serving_quantity,
+      package_quantity: servingInfo.package_quantity,
+      nutrition_data_per: servingInfo.nutrition_data_per,
       additives_tags: product?.additives_tags ?? [],
       nutriments: product?.nutriments ?? {},
     },
     score: scoring.score,
     ai_response: aiResponse,
     ai_cached: aiCached,
+    ai_pending: aiPending,
+    ai_error: aiError,
     score_version: 1,
     weights_version: activeWeights.weights_version,
   });

@@ -31,6 +31,10 @@ export type Product = {
   brands: string | null;
   image_url: string | null;
   ingredients_text: string | null;
+  serving_size: string | null;
+  serving_quantity: number | null;
+  package_quantity: string | null;
+  nutrition_data_per: string | null;
   additives_tags: string[];
   nutriments: Record<string, unknown>;
 };
@@ -39,8 +43,10 @@ export type ScanResult = {
   history_id: string;
   product: Product;
   score: number;
-  ai_response: string;
+  ai_response: string | null;
+  ai_error: string | null;
   ai_cached: boolean;
+  ai_pending: boolean;
   score_version: number;
   weights_version: number;
 };
@@ -56,6 +62,10 @@ export type HistorySnapshot = {
   product_brands?: string | null;
   product_image_url?: string | null;
   ingredients_text?: string | null;
+  serving_size?: string | null;
+  serving_quantity?: number | null;
+  package_quantity?: string | null;
+  nutrition_data_per?: string | null;
   nutriments?: Record<string, unknown>;
   additives_tags?: string[];
   additives_count?: number;
@@ -76,6 +86,10 @@ export type HistoryListItem = {
 
 export type HistoryProductDetail = HistoryProductSummary & {
   ingredients_text: string | null;
+  serving_size: string | null;
+  serving_quantity: number | null;
+  package_quantity: string | null;
+  nutrition_data_per: string | null;
   additives_tags: string[];
   nutriments: Record<string, unknown>;
 };

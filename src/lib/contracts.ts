@@ -19,6 +19,15 @@ function asNullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+function asNullableNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function asNumber(value: unknown, fallback = 0): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -71,6 +80,10 @@ function parseHistorySnapshot(raw: unknown): HistorySnapshot {
     product_brands: asNullableString(snapshot.product_brands),
     product_image_url: asNullableString(snapshot.product_image_url),
     ingredients_text: asNullableString(snapshot.ingredients_text),
+    serving_size: asNullableString(snapshot.serving_size),
+    serving_quantity: asNullableNumber(snapshot.serving_quantity),
+    package_quantity: asNullableString(snapshot.package_quantity),
+    nutrition_data_per: asNullableString(snapshot.nutrition_data_per),
     nutriments: isRecord(snapshot.nutriments) ? snapshot.nutriments : undefined,
     additives_tags: Array.isArray(snapshot.additives_tags) ? asStringArray(snapshot.additives_tags) : undefined,
     additives_count:
@@ -93,6 +106,10 @@ function parseHistoryProductDetail(raw: unknown, snapshot: HistorySnapshot): His
     brands: snapshot.product_brands ?? asNullableString(raw.brands),
     image_url: snapshot.product_image_url ?? asNullableString(raw.image_url),
     ingredients_text: snapshot.ingredients_text ?? asNullableString(raw.ingredients_text),
+    serving_size: snapshot.serving_size ?? asNullableString(raw.serving_size),
+    serving_quantity: snapshot.serving_quantity ?? asNullableNumber(raw.serving_quantity),
+    package_quantity: snapshot.package_quantity ?? asNullableString(raw.package_quantity),
+    nutrition_data_per: snapshot.nutrition_data_per ?? asNullableString(raw.nutrition_data_per),
     additives_tags: snapshot.additives_tags ?? asStringArray(raw.additives_tags),
     nutriments: snapshot.nutriments ?? asObject(raw.nutriments),
   };
@@ -128,12 +145,18 @@ export function parseScanResult(raw: unknown): ScanResult {
       brands: asNullableString(productRaw.brands),
       image_url: asNullableString(productRaw.image_url),
       ingredients_text: asNullableString(productRaw.ingredients_text),
+      serving_size: asNullableString(productRaw.serving_size),
+      serving_quantity: asNullableNumber(productRaw.serving_quantity),
+      package_quantity: asNullableString(productRaw.package_quantity),
+      nutrition_data_per: asNullableString(productRaw.nutrition_data_per),
       additives_tags: asStringArray(productRaw.additives_tags),
       nutriments: asObject(productRaw.nutriments),
     },
     score: asNumber(data.score),
-    ai_response: asString(data.ai_response),
+    ai_response: asNullableString(data.ai_response),
+    ai_error: asNullableString(data.ai_error),
     ai_cached: asBoolean(data.ai_cached),
+    ai_pending: asBoolean(data.ai_pending),
     score_version: asNumber(data.score_version, 1),
     weights_version: asNumber(data.weights_version, 1),
   };

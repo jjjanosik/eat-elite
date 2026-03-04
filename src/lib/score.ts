@@ -10,3 +10,11 @@ export function getScoreIndicatorColor(score: number): string {
   if (value >= 40) return '#F08C00';
   return '#D1242F';
 }
+
+export function getAdditivesIndicatorColor(additivesCount: number): string {
+  const count = Number.isFinite(additivesCount) ? Math.max(0, Math.floor(additivesCount)) : 0;
+
+  if (count === 0) return '#18B84A';
+  if (count <= 3) return '#F08C00';
+  return '#D1242F';
+}

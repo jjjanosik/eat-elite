@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ScanResultSheet } from '@/components/ScanResultSheet';
-import { scanProduct } from '@/lib/api';
+import { regenerateHistoryExplanation, scanProduct } from '@/lib/api';
 import type { ScanResult } from '@/lib/types';
 
 const DEFAULT_SCAN_ZOOM = 0.15;
@@ -19,6 +19,7 @@ export default function ScanScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [retryingExplanation, setRetryingExplanation] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const scanLockRef = useRef(false);
@@ -39,6 +40,9 @@ export default function ScanScreen() {
     try {
       const data = await scanProduct(normalized);
       setResult(data);
+      if (data.ai_pending) {
+        void refreshExplanation(data.history_id, false);
+      }
     } catch (error) {
       Alert.alert('Scan failed', error instanceof Error ? error.message : 'Unexpected error');
     } finally {
@@ -52,6 +56,55 @@ export default function ScanScreen() {
     runScan(event.data).finally(() => {
       scanLockRef.current = false;
     });
+  };
+
+  const refreshExplanation = async (historyId: string, showAlertOnError: boolean) => {
+    setRetryingExplanation(true);
+    try {
+      const refreshed = await regenerateHistoryExplanation(historyId);
+      setResult((current) =>
+        current?.history_id === historyId
+          ? {
+              ...current,
+              ai_response: refreshed.ai_response,
+              ai_error: null,
+              ai_cached: false,
+              ai_pending: false,
+            }
+          : current,
+      );
+    } catch (error) {
+      setResult((current) =>
+        current?.history_id === historyId
+          ? {
+              ...current,
+              ai_pending: false,
+              ai_error: 'ai_generation_failed',
+            }
+          : current,
+      );
+      if (showAlertOnError) {
+        Alert.alert('Retry failed', error instanceof Error ? error.message : 'Unexpected error');
+      }
+    } finally {
+      setRetryingExplanation(false);
+    }
+  };
+
+  const retryExplanation = async () => {
+    if (!result || retryingExplanation) return;
+
+    const historyId = result.history_id;
+    setResult((current) =>
+      current?.history_id === historyId
+        ? {
+            ...current,
+            ai_pending: true,
+            ai_error: null,
+          }
+        : current,
+    );
+    await refreshExplanation(historyId, true);
   };
 
   const toggleTorch = async () => {
@@ -115,6 +168,10 @@ export default function ScanScreen() {
         <ScanResultSheet
           result={result}
           onDismiss={() => setResult(null)}
+          onRetryExplanation={() => {
+            void retryExplanation();
+          }}
+          retryingExplanation={retryingExplanation}
           expandedTopOffset={scanHintTop}
           bottomContentPadding={tabBarHeight + SCAN_SHEET_BOTTOM_PADDING}
         />

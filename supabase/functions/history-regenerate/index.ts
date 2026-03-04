@@ -1,6 +1,6 @@
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
-import { generateGrokExplanation } from '../_shared/grok.ts';
+import { generateGrokExplanation, parseGrokExplanation } from '../_shared/grok.ts';
 import { enforceRateLimit, getBucketStart } from '../_shared/rate-limit.ts';
 import { parseJsonObject } from '../_shared/validation.ts';
 
@@ -21,8 +21,11 @@ function buildPrompt(input: {
     `Outcomes: ${input.outcomes.join(', ') || 'none'}`,
     `Additives count: ${input.additivesCount}`,
     `Nutriments: ${JSON.stringify(input.nutrients)}`,
-    'Explain score drivers and list 2 practical tips for healthier alternatives.',
-    'Do not provide medical advice.',
+    'Return ONLY a valid JSON object shaped like {"items":[{"polarity":"negative|positive","goal":"<goal-or-null>","text":"<short sentence>"}]}.',
+    'Create list items about this food based on the user goals/outcomes.',
+    'Place all negative items first, then positive items.',
+    'Keep each text concise and practical. No medical claims.',
+    'You may use **bold** markers inside text when useful.',
   ].join('\n');
 }
 
@@ -103,7 +106,12 @@ Deno.serve(async (req) => {
     productName: immutableProductName,
   });
 
-  const aiResponse = await generateGrokExplanation(prompt);
+  const aiResponseRaw = await generateGrokExplanation(prompt);
+  const parsedAiResponse = parseGrokExplanation(aiResponseRaw);
+  if (!parsedAiResponse) {
+    return jsonResponse({ error: 'ai_json_invalid' }, 502);
+  }
+  const aiResponse = JSON.stringify(parsedAiResponse);
 
   const { error: updateError } = await supabase
     .from('scan_history')

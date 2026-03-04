@@ -14,8 +14,9 @@ import { Picker } from '@react-native-picker/picker';
 import { Screen } from '@/components/Screen';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useAppState } from '@/context/AppStateContext';
-import { DIET_GOAL_OPTIONS, OUTCOME_OPTIONS } from '@/lib/constants';
+import { DIET_GOAL_OPTIONS, DIET_TYPES, OUTCOME_OPTIONS } from '@/lib/constants';
 import { saveProfile, saveWeights } from '@/lib/api';
+import type { DietType } from '@/lib/types';
 
 const SAVE_SUCCESS_VISIBLE_MS = 4000;
 const WEIGHT_MIN = 0;
@@ -23,6 +24,20 @@ const WEIGHT_MAX = 100;
 const GOALS_BOTTOM_PADDING = 72;
 const GOALS_BOTTOM_PADDING_WITH_SAVE = 150;
 const WEIGHT_OPTIONS = Array.from({ length: WEIGHT_MAX - WEIGHT_MIN + 1 }, (_, index) => WEIGHT_MIN + index);
+const DIET_GOAL_EMOJI_BY_VALUE: Record<string, string> = {
+  'lower sugar': '🍭',
+  'higher protein': '🍗',
+  'lower sodium': '🧂',
+  'fewer additives': '🧪',
+  'more whole foods': '🍎',
+};
+const OUTCOME_EMOJI_BY_VALUE: Record<string, string> = {
+  'weight management': '👍',
+  'better energy': '⚡',
+  'heart health': '❤️',
+  'gut health': '🩺',
+  'athletic performance': '🏃‍♂️',
+};
 
 function toggleValue(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -42,6 +57,18 @@ function arraysEqual(left: string[], right: string[]): boolean {
 
 function clampWeight(value: number): number {
   return Math.min(WEIGHT_MAX, Math.max(WEIGHT_MIN, Math.round(value)));
+}
+
+function formatDietGoalLabel(goal: string): string {
+  const emoji = DIET_GOAL_EMOJI_BY_VALUE[goal];
+  if (!emoji) return goal;
+  return `${goal} ${emoji}`;
+}
+
+function formatOutcomeLabel(outcome: string): string {
+  const emoji = OUTCOME_EMOJI_BY_VALUE[outcome];
+  if (!emoji) return outcome;
+  return `${outcome} ${emoji}`;
 }
 
 function WeightSelector({
@@ -69,6 +96,7 @@ export default function GoalsScreen() {
   const [saving, setSaving] = useState(false);
   const [savedVisible, setSavedVisible] = useState(false);
 
+  const [dietType, setDietType] = useState<DietType | null>(profile?.diet_type ?? null);
   const [dietGoals, setDietGoals] = useState<string[]>(profile?.diet_goals ?? []);
   const [outcomes, setOutcomes] = useState<string[]>(profile?.outcomes ?? []);
   const [nutritionWeight, setNutritionWeight] = useState<number>(weights?.nutrition_weight ?? 70);
@@ -82,6 +110,7 @@ export default function GoalsScreen() {
 
   useEffect(() => {
     if (profile) {
+      setDietType(profile.diet_type ?? null);
       setDietGoals(profile.diet_goals ?? []);
       setOutcomes(profile.outcomes ?? []);
     }
@@ -102,6 +131,7 @@ export default function GoalsScreen() {
 
   const baseline = useMemo(
     () => ({
+      dietType: profile?.diet_type ?? null,
       dietGoals: normalizeValues(profile?.diet_goals ?? []),
       outcomes: normalizeValues(profile?.outcomes ?? []),
       nutrition: weights?.nutrition_weight ?? 70,
@@ -111,18 +141,20 @@ export default function GoalsScreen() {
   );
 
   const hasChanges = useMemo(() => {
+    const currentDietType = dietType ?? null;
     const currentDietGoals = normalizeValues(dietGoals);
     const currentOutcomes = normalizeValues(outcomes);
     const currentNutrition = clampWeight(nutritionWeight);
     const currentAdditives = clampWeight(additivesWeight);
 
+    if (currentDietType !== baseline.dietType) return true;
     if (!arraysEqual(currentDietGoals, baseline.dietGoals)) return true;
     if (!arraysEqual(currentOutcomes, baseline.outcomes)) return true;
     if (currentNutrition !== baseline.nutrition) return true;
     if (currentAdditives !== baseline.additives) return true;
 
     return false;
-  }, [additivesWeight, baseline, dietGoals, nutritionWeight, outcomes]);
+  }, [additivesWeight, baseline, dietGoals, dietType, nutritionWeight, outcomes]);
 
   const setNutritionAndSync = useCallback((nextValue: number) => {
     const nextNutrition = clampWeight(nextValue);
@@ -206,10 +238,10 @@ export default function GoalsScreen() {
     }
 
     setSavedVisible(false);
-    setSaving(true);
-    try {
-      const [nextProfile, nextWeights] = await Promise.all([
-        saveProfile({ diet_goals: dietGoals, outcomes }),
+      setSaving(true);
+      try {
+        const [nextProfile, nextWeights] = await Promise.all([
+        saveProfile({ diet_type: dietType, diet_goals: dietGoals, outcomes }),
         saveWeights({
           nutrition_weight: totals.nutrition,
           additives_weight: totals.additives,
@@ -228,7 +260,7 @@ export default function GoalsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [dietGoals, hasChanges, outcomes, profile, saving, setProfile, setWeights, totals]);
+  }, [dietGoals, dietType, hasChanges, outcomes, profile, saving, setProfile, setWeights, totals]);
 
   const saveBarStyle = useMemo(
     () => ({
@@ -265,6 +297,21 @@ export default function GoalsScreen() {
         >
           <Text style={styles.subtitle}>Customize what the score emphasizes for your profile.</Text>
 
+          <Text style={styles.sectionTitle}>Diet Type</Text>
+          <View style={styles.dietTypeWrap}>
+            {DIET_TYPES.map((option) => (
+              <Pressable
+                key={option}
+                style={[styles.dietTypeButton, dietType === option && styles.dietTypeButtonSelected]}
+                onPress={() => setDietType(option)}
+              >
+                <Text style={[styles.dietTypeText, dietType === option && styles.dietTypeTextSelected]}>
+                  {option}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
           <Text style={styles.sectionTitle}>Diet Goals</Text>
           <View style={styles.optionList}>
             {DIET_GOAL_OPTIONS.map((goal) => (
@@ -278,7 +325,7 @@ export default function GoalsScreen() {
                 <View style={[styles.checkbox, dietGoals.includes(goal) ? styles.checkboxSelected : undefined]}>
                   {dietGoals.includes(goal) ? <Text style={styles.checkboxCheck}>✓</Text> : null}
                 </View>
-                <Text style={styles.optionText}>{goal}</Text>
+                <Text style={styles.optionText}>{formatDietGoalLabel(goal)}</Text>
               </Pressable>
             ))}
           </View>
@@ -296,7 +343,7 @@ export default function GoalsScreen() {
                 <View style={[styles.checkbox, outcomes.includes(outcome) ? styles.checkboxSelected : undefined]}>
                   {outcomes.includes(outcome) ? <Text style={styles.checkboxCheck}>✓</Text> : null}
                 </View>
-                <Text style={styles.optionText}>{outcome}</Text>
+                <Text style={styles.optionText}>{formatOutcomeLabel(outcome)}</Text>
               </Pressable>
             ))}
           </View>
@@ -380,6 +427,34 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#1f2328',
+  },
+  dietTypeWrap: {
+    width: '100%',
+    gap: 10,
+    marginBottom: 12,
+  },
+  dietTypeButton: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#d0d7de',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  dietTypeButtonSelected: {
+    backgroundColor: '#1f883d',
+    borderColor: '#1f883d',
+  },
+  dietTypeText: {
+    color: '#1f2328',
+    fontSize: 16,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+    textAlign: 'center',
+  },
+  dietTypeTextSelected: {
+    color: '#fff',
   },
   optionList: {
     marginBottom: 12,

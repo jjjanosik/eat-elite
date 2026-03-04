@@ -1,9 +1,19 @@
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
+import { extractServingInfoFromOffPayload } from '../_shared/off.ts';
 import { isRecord, parseJsonObject } from '../_shared/validation.ts';
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function asNullableNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -29,7 +39,7 @@ Deno.serve(async (req) => {
   const { data, error } = await supabase
     .from('scan_history')
     .select(
-      'id, barcode, score, score_version, weights_version, ai_response, ai_cached, created_at, inputs_snapshot, products(name, brands, image_url, ingredients_text, additives_tags, nutriments)',
+      'id, barcode, score, score_version, weights_version, ai_response, ai_cached, created_at, inputs_snapshot, products(name, brands, image_url, ingredients_text, additives_tags, nutriments, off_payload)',
     )
     .eq('id', historyId)
     .eq('user_id', user.id)
@@ -47,6 +57,7 @@ Deno.serve(async (req) => {
   const snapshot = isRecord(data.inputs_snapshot) ? data.inputs_snapshot : {};
   const productRelation = Array.isArray(data.products) ? data.products[0] : data.products;
   const productRecord = isRecord(productRelation) ? productRelation : null;
+  const servingInfo = extractServingInfoFromOffPayload(productRecord?.off_payload);
 
   const product = productRecord
     ? {
@@ -63,6 +74,20 @@ Deno.serve(async (req) => {
           typeof snapshot.ingredients_text === 'string'
             ? snapshot.ingredients_text
             : (productRecord.ingredients_text as string | null) ?? null,
+        serving_size:
+          typeof snapshot.serving_size === 'string'
+            ? snapshot.serving_size
+            : servingInfo.serving_size,
+        serving_quantity:
+          asNullableNumber(snapshot.serving_quantity) ?? servingInfo.serving_quantity,
+        package_quantity:
+          typeof snapshot.package_quantity === 'string'
+            ? snapshot.package_quantity
+            : servingInfo.package_quantity,
+        nutrition_data_per:
+          typeof snapshot.nutrition_data_per === 'string'
+            ? snapshot.nutrition_data_per
+            : servingInfo.nutrition_data_per,
         additives_tags:
           snapshot.additives_tags && Array.isArray(snapshot.additives_tags)
             ? asStringArray(snapshot.additives_tags)

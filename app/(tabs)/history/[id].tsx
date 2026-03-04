@@ -4,29 +4,30 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { Screen } from '@/components/Screen';
-import { AsteriskBoldText } from '@/components/AsteriskBoldText';
-import { fetchHistoryItem } from '@/lib/api';
-import { getScoreIndicatorColor } from '@/lib/score';
+import { GoalExplanationBlock } from '@/components/GoalExplanationBlock';
+import { fetchHistoryItem, regenerateHistoryExplanation } from '@/lib/api';
+import { getAdditivesIndicatorColor, getScoreIndicatorColor } from '@/lib/score';
 import { formatRelativeTime } from '@/lib/time';
 import type { HistoryDetailItem } from '@/lib/types';
 
 const HISTORY_DETAIL_BOTTOM_PADDING = 72;
 
 type NutrientDefinition = {
-  key: string;
+  key100g: string;
+  keyServing: string;
   label: string;
   unit: string;
 };
 
 const nutrientDefinitions: NutrientDefinition[] = [
-  { key: 'energy-kcal_100g', label: 'Calories', unit: 'kcal' },
-  { key: 'fat_100g', label: 'Fat', unit: 'g' },
-  { key: 'saturated-fat_100g', label: 'Saturated Fat', unit: 'g' },
-  { key: 'carbohydrates_100g', label: 'Carbs', unit: 'g' },
-  { key: 'sugars_100g', label: 'Sugar', unit: 'g' },
-  { key: 'fiber_100g', label: 'Fiber', unit: 'g' },
-  { key: 'proteins_100g', label: 'Protein', unit: 'g' },
-  { key: 'salt_100g', label: 'Salt', unit: 'g' },
+  { key100g: 'energy-kcal_100g', keyServing: 'energy-kcal_serving', label: 'Calories', unit: 'kcal' },
+  { key100g: 'fat_100g', keyServing: 'fat_serving', label: 'Fat', unit: 'g' },
+  { key100g: 'saturated-fat_100g', keyServing: 'saturated-fat_serving', label: 'Saturated Fat', unit: 'g' },
+  { key100g: 'carbohydrates_100g', keyServing: 'carbohydrates_serving', label: 'Carbs', unit: 'g' },
+  { key100g: 'sugars_100g', keyServing: 'sugars_serving', label: 'Sugar', unit: 'g' },
+  { key100g: 'fiber_100g', keyServing: 'fiber_serving', label: 'Fiber', unit: 'g' },
+  { key100g: 'proteins_100g', keyServing: 'proteins_serving', label: 'Protein', unit: 'g' },
+  { key100g: 'salt_100g', keyServing: 'salt_serving', label: 'Salt', unit: 'g' },
 ];
 
 function toNumber(value: unknown): number | null {
@@ -36,6 +37,13 @@ function toNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function formatNutrientValue(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
 }
 
 function ClockIcon() {
@@ -58,6 +66,7 @@ export default function HistoryDetailScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const [item, setItem] = useState<HistoryDetailItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryingExplanation, setRetryingExplanation] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -85,6 +94,20 @@ export default function HistoryDetailScreen() {
     load();
   }, [load]);
 
+  const retryExplanation = useCallback(async () => {
+    if (!item || retryingExplanation) return;
+
+    setRetryingExplanation(true);
+    try {
+      const refreshed = await regenerateHistoryExplanation(item.id);
+      setItem((current) => (current ? { ...current, ai_response: refreshed.ai_response, ai_cached: false } : current));
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : 'Unexpected error');
+    } finally {
+      setRetryingExplanation(false);
+    }
+  }, [item, retryingExplanation]);
+
   const additives = useMemo(() => {
     if (!item) return [];
     if (Array.isArray(item.inputs_snapshot?.additives_tags) && item.inputs_snapshot.additives_tags.length > 0) {
@@ -95,20 +118,97 @@ export default function HistoryDetailScreen() {
     }
     return [];
   }, [item]);
+  const additivesCount = useMemo(() => {
+    const snapshotCount = item?.inputs_snapshot?.additives_count;
+    if (typeof snapshotCount === 'number' && Number.isFinite(snapshotCount)) {
+      return snapshotCount;
+    }
+    return additives.length;
+  }, [additives.length, item?.inputs_snapshot?.additives_count]);
+  const ingredientsText = useMemo(
+    () => item?.inputs_snapshot?.ingredients_text ?? item?.product?.ingredients_text ?? null,
+    [item?.inputs_snapshot?.ingredients_text, item?.product?.ingredients_text],
+  );
+  const hasIngredients = Boolean(ingredientsText?.trim());
 
-  const nutrients = useMemo(() => {
+  const preferredNutrition = useMemo(() => {
     const source =
       (item?.inputs_snapshot?.nutriments as Record<string, unknown> | undefined) ??
       (item?.product?.nutriments as Record<string, unknown> | undefined) ??
       {};
+    const servingQuantityFromSnapshot = toNumber(item?.inputs_snapshot?.serving_quantity);
+    const servingQuantityFromProduct = item?.product?.serving_quantity ?? null;
+    const servingQuantityFromNutriments = toNumber((source as Record<string, unknown>).serving_quantity);
+    const servingQuantity = servingQuantityFromSnapshot ?? servingQuantityFromProduct ?? servingQuantityFromNutriments;
+    const servingSize =
+      item?.inputs_snapshot?.serving_size ??
+      item?.product?.serving_size ??
+      null;
+    const hasServingMetadata = Boolean(servingSize?.trim() || servingQuantity !== null);
 
-    return nutrientDefinitions
+    const hasDirectServingValues = nutrientDefinitions.some((definition) =>
+      toNumber(source[definition.keyServing]) !== null,
+    );
+    const hasAny100gValues = nutrientDefinitions.some((definition) =>
+      toNumber(source[definition.key100g]) !== null,
+    );
+    const canDeriveServingFrom100g = servingQuantity !== null && hasAny100gValues;
+    const useServingBasis = hasDirectServingValues || (hasServingMetadata && canDeriveServingFrom100g);
+
+    const rows = nutrientDefinitions
       .map((definition) => {
-        const numeric = toNumber(source[definition.key]);
-        if (numeric === null) return null;
-        return `${definition.label}: ${numeric} ${definition.unit}`;
+        if (useServingBasis) {
+          const directServing = toNumber(source[definition.keyServing]);
+          if (directServing !== null) {
+            return `${definition.label}: ${formatNutrientValue(directServing)} ${definition.unit}`;
+          }
+
+          if (servingQuantity !== null) {
+            const value100g = toNumber(source[definition.key100g]);
+            if (value100g !== null) {
+              const converted = (value100g * servingQuantity) / 100;
+              return `${definition.label}: ${formatNutrientValue(converted)} ${definition.unit}`;
+            }
+          }
+          return null;
+        }
+
+        const value100g = toNumber(source[definition.key100g]);
+        if (value100g === null) return null;
+        return `${definition.label}: ${formatNutrientValue(value100g)} ${definition.unit}`;
       })
       .filter((row): row is string => Boolean(row));
+
+    return {
+      sectionTitle: useServingBasis ? 'Nutrition (per serving)' : 'Nutrition (per 100g)',
+      rows,
+      fallbackMessage: useServingBasis
+        ? 'No per-serving nutrition data available.'
+        : 'No nutrition data available.',
+    };
+  }, [item]);
+  const servingInfoRows = useMemo(() => {
+    if (!item) return [];
+
+    const servingSize =
+      item.inputs_snapshot?.serving_size ??
+      item.product?.serving_size ??
+      null;
+    const servingQuantity =
+      item.inputs_snapshot?.serving_quantity ??
+      item.product?.serving_quantity ??
+      null;
+    const packageQuantity =
+      item.inputs_snapshot?.package_quantity ??
+      item.product?.package_quantity ??
+      null;
+    const rows: string[] = [];
+    if (servingSize && servingSize.trim()) rows.push(`Serving Size: ${servingSize}`);
+    if (typeof servingQuantity === 'number' && Number.isFinite(servingQuantity)) {
+      rows.push(`Serving Quantity: ${servingQuantity}`);
+    }
+    if (packageQuantity && packageQuantity.trim()) rows.push(`Package Quantity: ${packageQuantity}`);
+    return rows;
   }, [item]);
 
   return (
@@ -147,9 +247,16 @@ export default function HistoryDetailScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Explanation</Text>
-            <AsteriskBoldText text={item.ai_response ?? 'No Grok explanation saved for this scan yet.'} style={styles.aiText} />
+            <GoalExplanationBlock
+              rawExplanation={item.ai_response}
+              retrying={retryingExplanation}
+              onRetry={() => {
+                void retryExplanation();
+              }}
+            />
           </View>
 
+          {/* Scan details section (disabled)
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Scan Details</Text>
             <Text style={styles.detailText}>Barcode: {item.barcode}</Text>
@@ -157,38 +264,68 @@ export default function HistoryDetailScreen() {
             <Text style={styles.detailText}>Weights Version: {item.weights_version}</Text>
             <Text style={styles.detailText}>AI Cached: {item.ai_cached ? 'Yes' : 'No'}</Text>
           </View>
+          */}
 
+          {/* Ingredients section (disabled)
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Ingredients</Text>
             <Text style={styles.detailText}>
               {item.product?.ingredients_text?.trim() ? item.product.ingredients_text : 'No ingredient text available.'}
             </Text>
           </View>
+          */}
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Additives</Text>
-            {additives.length > 0 ? (
+            <View style={styles.sectionTitleRow}>
+              {hasIngredients ? (
+                <View
+                  style={[
+                    styles.sectionTitleDot,
+                    { backgroundColor: getAdditivesIndicatorColor(additivesCount) },
+                  ]}
+                />
+              ) : null}
+              <Text style={styles.sectionTitleText}>
+                {hasIngredients ? `${additivesCount} Additives` : 'Additives'}
+              </Text>
+            </View>
+            {!hasIngredients ? (
+              <Text style={styles.detailText}>No additive data available.</Text>
+            ) : additives.length > 0 ? (
               additives.map((additive) => (
                 <Text key={additive} style={styles.detailText}>
                   {'- '}
                   {additive}
                 </Text>
               ))
-            ) : (
-              <Text style={styles.detailText}>No additive data available.</Text>
-            )}
+            ) : null}
           </View>
 
+          {/* Serving info section (disabled)
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nutrition (per 100g)</Text>
-            {nutrients.length > 0 ? (
-              nutrients.map((row) => (
+            <Text style={styles.sectionTitle}>Serving Info</Text>
+            {servingInfoRows.length > 0 ? (
+              servingInfoRows.map((row) => (
                 <Text key={row} style={styles.detailText}>
                   {row}
                 </Text>
               ))
             ) : (
-              <Text style={styles.detailText}>No nutrition data available.</Text>
+              <Text style={styles.detailText}>No serving-size data available.</Text>
+            )}
+          </View>
+          */}
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{preferredNutrition.sectionTitle}</Text>
+            {preferredNutrition.rows.length > 0 ? (
+              preferredNutrition.rows.map((row) => (
+                <Text key={row} style={styles.detailText}>
+                  {row}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.detailText}>{preferredNutrition.fallbackMessage}</Text>
             )}
           </View>
         </View>
@@ -267,7 +404,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#1f2328',
-    fontSize: 16,
+    fontSize: 24,
     fontWeight: '700',
     marginBottom: 8,
     marginTop: 6,
@@ -275,13 +412,29 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#d8dee4',
   },
+  sectionTitleText: {
+    color: '#1f2328',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    paddingTop: 12,
+    marginBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#d8dee4',
+  },
+  sectionTitleDot: {
+    width: 13,
+    height: 13,
+    borderRadius: 999,
+  },
   detailText: {
     color: '#1f2328',
     marginBottom: 4,
-  },
-  aiText: {
-    color: '#1f2328',
-    lineHeight: 22,
   },
   errorText: {
     color: '#b42318',
